@@ -48,16 +48,6 @@ resources:
         Tags:
           - Key: Name
             Value: !Sub ${self:provider.stage}-vpc-subnetA
-
-    PublicSubnetC:
-      Type: AWS::EC2::Subnet
-      Properties:
-        VpcId: !Ref VPC
-        CidrBlock: "10.1.1.0/24"
-        AvailabilityZone: ap-northeast-1c
-        Tags:
-          - Key: Name
-            Value: !Sub ${self:provider.stage}-vpc-subnetC
     # ------------------------------------------------------------#
     #  RouteTable
     # ------------------------------------------------------------#
@@ -85,39 +75,64 @@ resources:
       Properties:
         RouteTableId: !Ref PublicRouteTable
         SubnetId: !Ref PublicSubnetA
-
-    PublicSubnetARouteTableAssociationC:
-      Type: AWS::EC2::SubnetRouteTableAssociation
-      Properties:
-        RouteTableId: !Ref PublicRouteTable
-        SubnetId: !Ref PublicSubnetC
-    # ------------------------------------------------------------#
-    #  Flow Logs
-    # ------------------------------------------------------------#
-    VPCFlowLogs:
-      Type: AWS::EC2::FlowLog
-      DependsOn: VPCFlowLogsS3Bucket
-      Properties:
-        LogDestination: !Sub ${self:provider.stage}-flowlog-test-bucket/
-        LogDestinationType: s3
-        ResourceId: !Ref VPC
-        ResourceType: "VPC"
-        TrafficType: "ALL"
-    VPCFlowLogsS3Bucket:
-      Type: AWS::S3::Bucket
-      Properties:
-        BucketName: !Sub ${self:provider.stage}-flowlog-test-bucket
     # ------------------------------------------------------------#
     #  SecurityGroup
     # ------------------------------------------------------------#
     SSHSecurityGroup:
       Type: AWS::EC2::SecurityGroup
-        Properties:
-          GroupDescription: "ssh"
-            SecurityGroupIngress:
-              -
-                IpProtocol: tcp
-                FromPort: 22
-                ToPort: 22
-                CidrIp: 0.0.0.0/0
-            VpcId: !Ref VPC
+      Properties:
+        GroupDescription: "ssh"
+        SecurityGroupIngress:
+          -
+            IpProtocol: tcp
+            FromPort: 22
+            ToPort: 22
+            CidrIp: 0.0.0.0/0
+        VpcId: !Ref VPC
+    # ------------------------------------------------------------#
+    #  VPC FlowLogs IAM Role
+    # ------------------------------------------------------------#
+    VpcFlowLogsIamRole:
+      Type: "AWS::IAM::Role"
+      Properties:
+        RoleName: !Sub ${self:provider.stage}-flowlogs-test-role
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: "sts:AssumeRole"
+        Policies:
+          - PolicyName: !Sub ${self:provider.stage}-flowlogs-test-policy
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - "logs:CreateLogGroup"
+                    - "logs:CreateLogStream"
+                    - "logs:PutLogEvents"
+                    - "logs:DescribeLogGroups"
+                    - "logs:DescribeLogStreams"
+                  Resource: "*"
+    # ------------------------------------------------------------#
+    #  VPC FlowLogs LogGroup
+    # ------------------------------------------------------------#
+    VpcFlowLogsLogGroup:
+      Type: "AWS::Logs::LogGroup"
+      Properties:
+        LogGroupName: !Sub ${self:provider.stage}-vpc-flowlogs
+    # ------------------------------------------------------------#
+    #  FlowLog
+    # ------------------------------------------------------------#
+    VPCFlowLogs:
+      Type: AWS::EC2::FlowLog
+      Properties:
+        ResourceId: !Ref VPC
+        ResourceType: "VPC"
+        TrafficType: "ALL"
+        DeliverLogsPermissionArn: !GetAtt VpcFlowLogsIamRole.Arn
+        LogGroupName: !Ref VpcFlowLogsLogGroup
+        LogFormat: ${vpc-id} ${subnet-id} ${instance-id} ${srcaddr} ${dstaddr} ${srcport} ${dstport} ${protocol} ${action} ${log-status} ${flow-direction} ${traffic-path}
+        MaxAggregationInterval: 60
