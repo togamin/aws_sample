@@ -1,0 +1,39 @@
+service: serverless-kinesis
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.8
+  region: ap-northeast-1
+
+functions:
+  hello:
+    handler: handler.helloStream
+    role: !GetAtt KinesisLambdaTestRole.Arn
+    events:
+      - stream:
+          type: kinesis
+          arn: !GetAtt TestStream.Arn
+          batchSize: 1
+          startingPosition: LATEST
+          enabled: true
+
+resources:
+  Resources:
+    TestStream:
+      Type: AWS::Kinesis::Stream
+      Properties:
+        Name: testStream
+        ShardCount: 1
+    KinesisLambdaTestRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: lambda.amazonaws.com
+              Action: "sts:AssumeRole"
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaKinesisExecutionRole
